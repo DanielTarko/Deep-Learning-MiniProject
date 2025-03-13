@@ -1,5 +1,6 @@
 import torch
 from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, random_split
 import numpy as np
 from matplotlib import pyplot as plt
 from utils import plot_tsne
@@ -45,6 +46,45 @@ if __name__ == "__main__":
         test_dataset = datasets.CIFAR10(root=args.data_path, train=False, download=True, transform=transform)
         
     # When you create your dataloader you should split train_dataset or test_dataset to leave some aside for validation
+
+
+
+   # ---------- dataloader code --------------
+
+    validation_split = 0.2
+    validation_size = int(len(train_dataset) * validation_split)
+    train_size = len(train_dataset) - validation_size
+
+    train_subset, val_subset = random_split(train_dataset, [train_size, validation_size])
+
+
+    # Create data loaders
+    train_loader = DataLoader(
+        train_subset, 
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=2, 
+    )
+
+    val_loader = DataLoader(
+        val_subset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=2,
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=2,
+    )
+
+
+
+   # ---------- dataloader code --------------
+
+
 
     #this is just for the example. Simple flattening of the image is probably not the best idea                                        
     encoder_model = torch.nn.Linear(32*32*3,args.latent_dim).to(args.device)
