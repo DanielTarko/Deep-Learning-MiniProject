@@ -8,6 +8,10 @@ import numpy as np
 import random
 import argparse
 
+import encoder1 as en
+import torch.nn as nn
+import torch.optim as optim
+
 NUM_CLASSES = 10
 
 def freeze_seeds(seed=0):
@@ -29,6 +33,10 @@ def get_args():
     
 
 if __name__ == "__main__":
+
+    # Set device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  #one possible convenient normalization. You don't have to use it.
@@ -86,11 +94,23 @@ if __name__ == "__main__":
 
 
 
-    #this is just for the example. Simple flattening of the image is probably not the best idea                                        
-    encoder_model = torch.nn.Linear(32*32*3,args.latent_dim).to(args.device)
-    decoder_model = torch.nn.Linear(args.latent_dim,32*32*3 if args.self_supervised else NUM_CLASSES).to(args.device) 
+        # Instantiate model, loss function, and optimizer
+    latent_dim = 128
+    autoencoder = en.Autoencoder(latent_dim).to(device)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(autoencoder.parameters(), lr=0.001)
 
-    sample = train_dataset[0][0][None].to(args.device) #This is just for the example - you should use a dataloader
-    output = decoder_model(encoder_model(sample.flatten()))
-    print(output.shape)
+    # Train the model
+    trainer = en.Trainer(autoencoder, train_loader, val_loader, criterion, optimizer, device)
+    trainer.train(epochs=20)
 
+    # Save model
+    torch.save(autoencoder.state_dict(), "autoencoder_cifar10.pth")
+
+    # Load trained model
+    autoencoder.load_state_dict(torch.load("autoencoder_cifar10.pth"))
+    autoencoder.to(device)
+
+    tester = en.Tester(autoencoder, test_loader, device)
+    tester.test_model()
+    tester.plot_tsne()
