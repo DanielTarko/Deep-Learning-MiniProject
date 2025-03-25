@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
 
 
 # Define the Encoder
@@ -50,9 +51,21 @@ class Autoencoder(nn.Module):
         latent = self.encoder(x)
         reconstructed = self.decoder(latent)
         return reconstructed
+    # Define Classifier
+class Classifier(nn.Module):
+    def __init__(self, encoder, num_classes=10):
+        super(Classifier, self).__init__()
+        self.encoder = encoder
+        self.classifier = nn.Linear(encoder.encoder[-1].out_features, num_classes)
     
-# Training class
-class Trainer:
+    def forward(self, x):
+        with torch.no_grad():
+            features = self.encoder(x)
+        logits = self.classifier(features)
+        return logits
+
+# Training class for autoencoder
+class AutoencoderTrainer:
     def __init__(self, model, train_loader, val_loader, criterion, optimizer, device):
         self.model = model
         self.train_loader = train_loader
@@ -60,6 +73,7 @@ class Trainer:
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
+        self.train_losses = []
 
     def train(self, epochs):
         for epoch in range(epochs):
@@ -74,54 +88,78 @@ class Trainer:
                 self.optimizer.step()
                 train_loss += loss.item()
             
-            print(f"Epoch [{epoch+1}/{epochs}], Loss: {train_loss/len(self.train_loader):.4f}")
+            avg_train_loss = train_loss / len(self.train_loader)
+            self.train_losses.append(avg_train_loss)
+            print(f"Epoch [{epoch+1}/{epochs}], Loss: {train_loss/len(self.train_loader)}")
         
-        print("Training complete. Model saved.")
+        print("Autoencoder training complete. Model saved.")
 
-# Testing class
-class Tester:
-    def __init__(self, model, test_loader, device):
+    def plot_loss(self,save_path='autoencoder_training_loss.png'):
+            plt.plot(self.train_losses, label='Training Loss')
+            plt.xlabel('Epochs')
+            plt.ylabel('Loss')
+            plt.title('Autoencoder Training Loss')
+            plt.legend()
+            plt.savefig('autoencoder_training_loss.png')
+            plt.close
+
+# Training class for classifier
+class ClassifierTrainer:
+    def __init__(self, model, train_loader, val_loader, criterion, optimizer, device):
         self.model = model
-        self.test_loader = test_loader
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.criterion = criterion
+        self.optimizer = optimizer
         self.device = device
+        self.train_losses = []
+        self.train_accuracies = []
 
-    def test_model(self):
-        self.model.eval()
-        with torch.no_grad():
-            images, _ = next(iter(self.test_loader))
-            images = images.to(self.device)
-            reconstructed = self.model(images)
-            images = images.cpu().numpy()
-            reconstructed = reconstructed.cpu().numpy()
-        
-        fig, axes = plt.subplots(2, 10, figsize=(10, 2))
-        for i in range(10):
-            axes[0, i].imshow(np.transpose(images[i], (1, 2, 0)) * 0.5 + 0.5)
-            axes[0, i].axis('off')
-            axes[1, i].imshow(np.transpose(reconstructed[i], (1, 2, 0)) * 0.5 + 0.5)
-            axes[1, i].axis('off')
-        plt.savefig("reconstructed_images.png")
-        plt.close()
-        print("Reconstructed images saved.")
-
-    def plot_tsne(self):
-        self.model.eval()
-        latent_list = []
-        labels_list = []
-        with torch.no_grad():
-            for images, labels in self.test_loader:
+    def train(self, epochs):
+        for epoch in range(epochs):
+            self.model.train()
+            train_loss = 0
+            corret = 0
+            total = 0
+            for images, labels in self.train_loader:
                 images, labels = images.to(self.device), labels.to(self.device)
-                latent_vector = self.model.encoder(images)
-                latent_list.append(latent_vector.cpu().numpy())
-                labels_list.append(labels.cpu().numpy())
-        latent_vectors = np.concatenate(latent_list, axis=0)
-        labels = np.concatenate(labels_list, axis=0)
-        tsne = TSNE(n_components=2, random_state=0)
-        latent_tsne = tsne.fit_transform(latent_vectors)
-        plt.figure(figsize=(8, 6))
-        scatter = plt.scatter(latent_tsne[:, 0], latent_tsne[:, 1], c=labels, cmap='tab10', s=10)
-        plt.colorbar(scatter)
-        plt.title('t-SNE of Latent Space')
-        plt.savefig('latent_tsne.png')
+                self.optimizer.zero_grad()
+                outputs = self.model(images)
+                loss = self.criterion(outputs, labels)
+                loss.backward()
+                self.optimizer.step()
+                train_loss += loss.item()
+
+                _, predicted = torch.max(outputs, 1)
+                total += labels.size(0)
+                corret += (predicted == labels).sum().item()
+                
+            
+
+            avg_train_loss = train_loss / len(self.train_loader)
+            avg_train_accuracy = 100* corret / total
+            self.train_losses.append(avg_train_loss)
+            self.train_accuracies.append(avg_train_accuracy)
+            print(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_train_loss}")
+            print(f"Accuracy: {avg_train_accuracy}")
+        
+        print("Classifier training complete. Model saved.")
+
+    def plot_loss(self, save_path='classifier_training_loss.png'):
+        plt.plot(self.train_losses, label='Training Loss')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.title('Classifier Training Loss')
+        plt.legend()
+        plt.savefig(save_path)
         plt.close()
-        print("t-SNE plot saved.")
+    
+    def plot_accuracy(self, save_path='classifier_training_accuracy.png'):
+        plt.plot(self.train_accuracies, label='Training Accuracy')
+        plt.xlabel('Epochs')
+        plt.ylabel('Accuracy (%)')
+        plt.title('Classifier Training Accuracy')
+        plt.legend()
+        plt.savefig(save_path)
+        plt.close()
+    

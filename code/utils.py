@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 from sklearn.manifold import TSNE
-
+import encoder1
+from matplotlib import pyplot as plt
 def plot_tsne(model, dataloader, device):
     '''
     model - torch.nn.Module subclass. This is your encoder model
@@ -52,3 +53,4 @@ def plot_tsne(model, dataloader, device):
     plt.title('t-SNE of Image Space')
     plt.savefig('image_tsne.png')
     plt.close()
+
