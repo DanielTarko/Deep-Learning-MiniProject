@@ -15,7 +15,6 @@ class Encoder(nn.Module):
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(128 * 4 * 4, latent_dim)
         )
     
     def forward(self, x):
@@ -26,8 +25,6 @@ class Decoder(nn.Module):
     def __init__(self, latent_dim=128):
         super(Decoder, self).__init__()
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, 128 * 4 * 4),
-            nn.ReLU(),
             nn.Unflatten(1, (128, 4, 4)),
             nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
             nn.ReLU(),
@@ -56,7 +53,14 @@ class Classifier(nn.Module):
     def __init__(self, encoder, num_classes=10):
         super(Classifier, self).__init__()
         self.encoder = encoder
-        self.classifier = nn.Linear(encoder.encoder[-1].out_features, num_classes)
+        self.classifier = nn.Sequential(
+            nn.Linear(encoder.encoder[-1].out_features, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, num_classes)
+            
+        )
     
     def forward(self, x):
         with torch.no_grad():
