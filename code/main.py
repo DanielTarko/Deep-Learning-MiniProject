@@ -138,3 +138,51 @@ if __name__ == "__main__":
             print("classifier.pth exists. Loading model.")
             classifier = en.Classifier(autoencoder.encoder, num_classes=10).to(device)
             classifier.load_state_dict(torch.load(f"autoencoder_{dataset}.pth"))
+    else: # not self-supervised
+        if not os.path.exists(f"joint_classification_model_{dataset}.pth"):
+            print("Training joint classification model")
+            
+            # Create encoder with fixed latent dimension
+            encoder = en.Encoder(latent_dim=latent_dim).to(device)
+            
+            # Create joint model using the encoder
+            joint_model = en.JointModel(encoder, num_classes=10).to(device)
+            
+            # Loss and optimization
+            joint_criterion = nn.CrossEntropyLoss()
+            joint_lr = 0.001
+            joint_epochs = 20
+            
+            # Optimize entire joint model (both encoder and classifier)
+            joint_optimizer = optim.Adam(joint_model.parameters(), lr=joint_lr)
+            
+            # Create trainer for joint model
+            joint_trainer = en.JointModelTrainer(
+                joint_model, 
+                train_loader, 
+                val_loader, 
+                joint_criterion, 
+                joint_optimizer, 
+                device
+            )
+
+            # Train the joint model
+            joint_trainer.train(epochs=joint_epochs)
+
+            # Save the entire joint model
+            torch.save(joint_model.state_dict(), f"joint_classification_model_{dataset}.pth")
+            
+            # Plot training metrics
+            joint_trainer.plot_loss(save_path=f"joint_training_loss_{dataset}.png")
+            joint_trainer.plot_accuracy(save_path=f"joint_training_accuracy_{dataset}.png")
+        else:
+            print("Joint classification model exists. Loading model.")
+            
+            # Create encoder
+            encoder = en.Encoder(latent_dim=latent_dim).to(device)
+            
+            # Create joint model
+            joint_model = en.JointModel(encoder, num_classes=10).to(device)
+            
+            # Load the saved model
+            joint_model.load_state_dict(torch.load(f"joint_classification_model_{dataset}.pth"))
