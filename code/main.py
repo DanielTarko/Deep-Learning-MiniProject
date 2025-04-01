@@ -147,4 +147,26 @@ if __name__ == "__main__":
             print("classifier.pth exists. Loading model.")
             classifier = en.Classifier(autoencoder.encoder, num_classes=10).to(device)
             classifier.load_state_dict(torch.load(f"classifier_{dataset}.pth"))
-            
+                else: # not self-supervised
+        model_path = f"joint_classification_model_{dataset}.pth"
+
+        if not os.path.exists(model_path):
+            print("Training joint classification model...")
+            encoder = en.JointEncoder(latent_dim=latent_dim).to(device)
+            joint_model = en.JointModel(encoder, latent_dim=latent_dim, num_classes=10).to(device)
+
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(joint_model.parameters(), lr=0.001)
+            epochs = 20
+
+            trainer = en.JointModelTrainer(joint_model, train_loader, val_loader, criterion, optimizer, device)
+            trainer.train(epochs)
+
+            torch.save(joint_model.state_dict(), model_path)
+            trainer.plot_loss(f"joint_training_loss_{dataset}.png")
+            trainer.plot_accuracy(f"joint_training_accuracy_{dataset}.png")
+        else:
+            print("Model already exists. Loading...")
+            encoder = en.Encoder(latent_dim=latent_dim).to(device)
+            joint_model = en.JointModel(encoder, latent_dim=latent_dim, num_classes=10).to(device)
+            joint_model.load_state_dict(torch.load(model_path))

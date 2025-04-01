@@ -250,3 +250,97 @@ class ClassifierTrainer:
         plt.legend()
         plt.savefig(save_path)
         plt.close()
+
+    # Define Classifier (modified to work directly with latent space)
+class JointModel(nn.Module):
+    def __init__(self, encoder, num_classes=10):
+        super(JointModel, self).__init__()
+        self.encoder = encoder
+        self.classifier = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(encoder.encoder[-1].out_features, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, num_classes)
+        )
+    
+    def forward(self, x):
+        latent = self.encoder(x)
+        logits = self.classifier(latent)
+        return logits
+
+# Training class for joint model
+class JointModelTrainer:
+    def __init__(self, model, train_loader, val_loader, criterion, optimizer, device):
+        self.model = model
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.device = device
+        self.train_losses = []
+        self.train_accuracies = []
+
+    def train(self, epochs):
+        for epoch in range(epochs):
+            self.model.train()
+            train_loss = 0
+            correct = 0
+            total = 0
+            
+            for images, labels in self.train_loader:
+                images, labels = images.to(self.device), labels.to(self.device)
+                
+                # Zero the parameter gradients
+                self.optimizer.zero_grad()
+                
+                # Forward pass
+                outputs = self.model(images)
+                
+                # Compute loss
+                loss = self.criterion(outputs, labels)
+                
+                # Backward pass and optimize
+                loss.backward()
+                self.optimizer.step()
+                
+                # Compute accuracy
+                train_loss += loss.item()
+                _, predicted = torch.max(outputs, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+            
+            # Compute average loss and accuracy
+            avg_train_loss = train_loss / len(self.train_loader)
+            avg_train_accuracy = 100 * correct / total
+            
+            # Store metrics
+            self.train_losses.append(avg_train_loss)
+            self.train_accuracies.append(avg_train_accuracy)
+            
+            # Print epoch statistics
+            print(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_train_loss:.4f}, Accuracy: {avg_train_accuracy:.2f}%")
+        
+        print("Joint model training complete.")
+
+    def plot_loss(self, save_path='joint_training_loss.png'):
+        plt.figure(figsize=(10, 5))
+        plt.plot(self.train_losses, label='Training Loss')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.title('Joint Model Training Loss')
+        plt.legend()
+        plt.savefig(save_path)
+        plt.close()
+    
+    def plot_accuracy(self, save_path='joint_training_accuracy.png'):
+        plt.figure(figsize=(10, 5))
+        plt.plot(self.train_accuracies, label='Training Accuracy')
+        plt.xlabel('Epochs')
+        plt.ylabel('Accuracy (%)')
+        plt.title('Joint Model Training Accuracy')
+        plt.legend()
+        plt.savefig(save_path)
+        plt.close()
+
