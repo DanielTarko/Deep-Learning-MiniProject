@@ -2,34 +2,39 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
-
 # Define the Encoder
-class Encoder(nn.Module):
+class Encoder_CIFAR10(nn.Module):
     def __init__(self, latent_dim=128):
-        super(Encoder, self).__init__()
+        super(Encoder_CIFAR10, self).__init__()
+        self.latent_dim = latent_dim
+        # Encoder network
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Flatten(),
+            nn.Linear(128 * 4 * 4, latent_dim)
         )
-    
+           
     def forward(self, x):
         return self.encoder(x)
 
+
 # Define the Decoder
-class Decoder(nn.Module):
-    def __init__(self, latent_dim=128):
-        super(Decoder, self).__init__()
-        self.decoder = nn.Sequential(
+class Decoder_CIFAR10(nn.Module):
+    def __init__(self, latent_dim=128, mnist=False):
+        super(Decoder_CIFAR10, self).__init__()
+        self.decoder = nn.Sequential( 
+            nn.Linear(latent_dim, 128 * 4 * 4),
+            nn.LeakyReLU(),
             nn.Unflatten(1, (128, 4, 4)),
             nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.ConvTranspose2d(32, 3, kernel_size=3, stride=2, padding=1, output_padding=1),
             nn.Tanh()
         )
@@ -37,12 +42,42 @@ class Decoder(nn.Module):
     def forward(self, x):
         return self.decoder(x)
 
+class Encoder_MNIST(nn.Module):
+    def __init__(self, latent_dim=128):
+        super(Encoder_MNIST, self).__init__()
+        self.latent_dim = latent_dim
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1),  # Output: 14x14x32
+            nn.LeakyReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # Output: 7x7x64
+            nn.LeakyReLU(),
+            nn.Flatten(),
+            nn.Linear(7 * 7 * 64, latent_dim)
+        )
+
+    def forward(self, x):
+        return self.encoder(x)
+class Decoder_MNIST(nn.Module):
+    def __init__(self, latent_dim=128):
+        super(Decoder_MNIST, self).__init__()
+        self.decoder = nn.Sequential(
+             nn.Linear(latent_dim, 7 * 7 * 64),
+            nn.ReLU(True),
+            nn.Unflatten(1, (64, 7, 7)),
+            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),  # Output: 14x14x32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1),   # Output: 28x28x1
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.decoder(x)
 # Define Autoencoder
 class Autoencoder(nn.Module):
-    def __init__(self, latent_dim=128):
+    def __init__(self, latent_dim=128,mnist=False):
         super(Autoencoder, self).__init__()
-        self.encoder = Encoder(latent_dim)
-        self.decoder = Decoder(latent_dim)
+        self.encoder = Encoder_CIFAR10(latent_dim) if not mnist else Encoder_MNIST(latent_dim)
+        self.decoder = Decoder_CIFAR10(latent_dim) if not mnist else Decoder_MNIST(latent_dim)
     
     def forward(self, x):
         latent = self.encoder(x)
@@ -54,11 +89,13 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
         self.encoder = encoder
         self.classifier = nn.Sequential(
-            nn.Linear(encoder.encoder[-1].out_features, 128),
+            nn.Linear(encoder.latent_dim, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Linear(128, 64),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Linear(64, num_classes)
+            nn.Linear(128, num_classes)
             
         )
     
@@ -78,6 +115,7 @@ class AutoencoderTrainer:
         self.optimizer = optimizer
         self.device = device
         self.train_losses = []
+        self.validation_losses = []
 
     def train(self, epochs):
         for epoch in range(epochs):
@@ -95,6 +133,18 @@ class AutoencoderTrainer:
             avg_train_loss = train_loss / len(self.train_loader)
             self.train_losses.append(avg_train_loss)
             print(f"Epoch [{epoch+1}/{epochs}], Loss: {train_loss/len(self.train_loader)}")
+            self.model.eval()
+            val_loss = 0
+            with torch.no_grad():
+                for images, _ in self.val_loader:
+                    images = images.to(self.device)
+                    outputs = self.model(images)
+                    loss = self.criterion(outputs, images)
+                    val_loss += loss.item()
+            avg_val_loss = val_loss / len(self.val_loader)
+            self.validation_losses.append(avg_val_loss)
+            print(f"Validation Loss: {avg_val_loss}")
+        # Save the model
         
         print("Autoencoder training complete. Model saved.")
 
@@ -105,7 +155,16 @@ class AutoencoderTrainer:
             plt.title('Autoencoder Training Loss')
             plt.legend()
             plt.savefig('autoencoder_training_loss.png')
-            plt.close
+            plt.close()
+    def plot_validation_loss(self,save_path='autoencoder_validation_loss.png'):
+            plt.plot(self.validation_losses, label='Validation Loss')
+            plt.xlabel('Epochs')
+            plt.ylabel('Loss')
+            plt.title('Autoencoder Validation Loss')
+            plt.legend()
+            plt.savefig('autoencoder_validation_loss.png')
+            plt.close()
+
 
 # Training class for classifier
 class ClassifierTrainer:
@@ -118,6 +177,7 @@ class ClassifierTrainer:
         self.device = device
         self.train_losses = []
         self.train_accuracies = []
+        self.validation_accuracies = []
 
     def train(self, epochs):
         for epoch in range(epochs):
@@ -137,15 +197,30 @@ class ClassifierTrainer:
                 _, predicted = torch.max(outputs, 1)
                 total += labels.size(0)
                 corret += (predicted == labels).sum().item()
-                
-            
+
 
             avg_train_loss = train_loss / len(self.train_loader)
             avg_train_accuracy = 100* corret / total
             self.train_losses.append(avg_train_loss)
             self.train_accuracies.append(avg_train_accuracy)
             print(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_train_loss}")
-            print(f"Accuracy: {avg_train_accuracy}")
+            print("Training Accuracy: ", avg_train_accuracy)
+            
+            # Validation
+            self.model.eval()
+            validation_correct = 0
+            validation_total = 0
+            with torch.no_grad():
+                for images, labels in self.val_loader:
+                    images, labels = images.to(self.device), labels.to(self.device)
+                    outputs = self.model(images)
+                    _, predicted = torch.max(outputs, 1)
+                    validation_total += labels.size(0)
+                    validation_correct += (predicted == labels).sum().item()
+            validation_accuracy = 100 * validation_correct / validation_total
+            self.validation_accuracies.append(validation_accuracy)
+            print(f"Validation Accuracy: {validation_accuracy}")
+            self.model.train()
         
         print("Classifier training complete. Model saved.")
 
@@ -166,4 +241,12 @@ class ClassifierTrainer:
         plt.legend()
         plt.savefig(save_path)
         plt.close()
-    
+
+    def plot_validation_accuracy(self, save_path='classifier_validation_accuracy.png'):
+        plt.plot(self.validation_accuracies, label='validation Accuracy')
+        plt.xlabel('Epochs')
+        plt.ylabel('Accuracy (%)')
+        plt.title('Classifier validation Accuracy')
+        plt.legend()
+        plt.savefig(save_path)
+        plt.close()

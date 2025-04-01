@@ -12,6 +12,8 @@ import os
 import encoder1 as en
 import torch.nn as nn
 import torch.optim as optim
+import torch.optim.lr_scheduler as sched
+
 
 NUM_CLASSES = 10
 
@@ -37,9 +39,11 @@ if __name__ == "__main__":
 
     args = get_args()
 
+    mean = [0.5, 0.5, 0.5] if not args.mnist else [0.5]
+    std = [0.5, 0.5, 0.5] if not args.mnist else [0.5]
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  #one possible convenient normalization. You don't have to use it.
+        transforms.Normalize(mean=mean, std=std)  #one possible convenient normalization. You don't have to use it.
     ])
 
     # Set device
@@ -98,15 +102,16 @@ if __name__ == "__main__":
         # Instantiate model, loss function, and optimizer
     latent_dim = args.latent_dim
     dataset = "MNIST" if args.mnist else "CIFAR10"
+    print(f"Using {dataset} dataset")
     
     if args.self_supervised:
         if not os.path.exists(f"autoencoder_{dataset}.pth"):
             print("Training autoencoder")
             # Train autoencoder
-            autoencoder = en.Autoencoder(latent_dim).to(device)
-            ae_criterion = nn.MSELoss()
-            ae_lr = 0.001
-            ae_epochs = 20
+            autoencoder = en.Autoencoder(latent_dim, args.mnist).to(device)
+            ae_criterion = nn.L1Loss()
+            ae_lr = 0.0005 if not args.mnist else 0.0001
+            ae_epochs = 30
             ae_optimizer = optim.Adam(autoencoder.parameters(), lr=ae_lr)
             ae_trainer = en.AutoencoderTrainer(autoencoder, train_loader, val_loader, ae_criterion, ae_optimizer, device)
 
@@ -114,17 +119,20 @@ if __name__ == "__main__":
 
             torch.save(autoencoder.state_dict(), f"autoencoder_{dataset}.pth")
             ae_trainer.plot_loss(save_path=f"autoencoder_training_loss_{dataset}.png")
+            ae_trainer.plot_validation_loss(save_path=f"autoencoder_validation_loss_{dataset}.png")
         else:
             print("autoencoder.pth exists. Loading model.")
-            autoencoder = en.Autoencoder(latent_dim).to(device)
-            autoencoder.load_state_dict(torch.load(f"autoencoder_{dataset}.pth"))
+            autoencoder = en.Autoencoder(latent_dim, args.mnist).to(device)
+            autoencoder.load_state_dict(
+                torch.load(f"autoencoder_{dataset}.pth", map_location=device)
+                )
 
         if not os.path.exists(f"classifier_{dataset}.pth"):
             print("Training classifier")
             # Train classifier
             classifier = en.Classifier(autoencoder.encoder, num_classes=10).to(device)
             clf_criterion = nn.CrossEntropyLoss()
-            clf_lr = 0.001
+            clf_lr = 0.005 if not args.mnist else 0.001
             clf_epochs=20
             clf_optimizer = optim.Adam(classifier.parameters(), lr=clf_lr)
             clf_trainer = en.ClassifierTrainer(classifier, train_loader, val_loader, clf_criterion, clf_optimizer, device)
@@ -134,7 +142,9 @@ if __name__ == "__main__":
             torch.save(classifier.state_dict(), f"classifier_{dataset}.pth")
             clf_trainer.plot_loss(save_path=f"classifier_training_loss_{dataset}.png")
             clf_trainer.plot_accuracy(save_path=f"classifier_training_accuracy_{dataset}.png")  
+            clf_trainer.plot_validation_accuracy(save_path=f"classifier_validation_accuracy_{dataset}.png")
         else:
             print("classifier.pth exists. Loading model.")
             classifier = en.Classifier(autoencoder.encoder, num_classes=10).to(device)
-            classifier.load_state_dict(torch.load(f"autoencoder_{dataset}.pth"))
+            classifier.load_state_dict(torch.load(f"classifier_{dataset}.pth"))
+            
