@@ -147,7 +147,7 @@ if __name__ == "__main__":
             print("classifier.pth exists. Loading model.")
             classifier = en.Classifier(autoencoder.encoder, num_classes=10).to(device)
             classifier.load_state_dict(torch.load(f"classifier_{dataset}.pth"))
-                else: # not self-supervised
+    else: # not self-supervised
         model_path = f"joint_classification_model_{dataset}.pth"
 
         if not os.path.exists(model_path):
